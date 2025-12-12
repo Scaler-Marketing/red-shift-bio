@@ -384,6 +384,16 @@ class RSBFormHandler {
       );
       config.submitButton = newButton;
 
+      // Update submitLabel reference if it was inside the button
+      if (FORM_CONFIG.submitLabelSelector) {
+        const newLabel = config.submitButton.querySelector(
+          FORM_CONFIG.submitLabelSelector
+        );
+        if (newLabel) {
+          config.submitLabel = newLabel;
+        }
+      }
+
       config.submitButton.addEventListener(
         "click",
         (event) => {
