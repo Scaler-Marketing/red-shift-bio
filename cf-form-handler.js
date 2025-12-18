@@ -354,8 +354,32 @@ class RSBFormHandler {
       event.stopPropagation();
       event.stopImmediatePropagation();
 
-      if (!config.formElement.checkValidity()) {
-        config.formElement.reportValidity();
+      // Run standard HTML5 validation
+      const isHtmlValid = config.formElement.checkValidity();
+
+      // Run custom validation for hidden selects
+      const isCustomValid = this.validateCustomSelects(config);
+
+      if (!isHtmlValid) {
+        // If it's invalid, check if the ONLY invalid fields are our custom hidden ones.
+        // If so, we skip reportValidity() to avoid the "not focusable" error.
+        const invalidFields = config.formElement.querySelectorAll(":invalid");
+        let hasVisibleInvalid = false;
+        invalidFields.forEach((field) => {
+          // Simple visibility check: offsetParent is null if hidden
+          // Also check if it's one of our custom selects
+          const isCustomSelect = field.hasAttribute("cf-form-select");
+          if (!isCustomSelect && field.offsetParent !== null) {
+            hasVisibleInvalid = true;
+          }
+        });
+
+        if (hasVisibleInvalid) {
+          config.formElement.reportValidity();
+        }
+      }
+
+      if (!isHtmlValid || !isCustomValid) {
         return false;
       }
 
@@ -399,8 +423,28 @@ class RSBFormHandler {
         (event) => {
           event.preventDefault();
           event.stopPropagation();
+          event.stopImmediatePropagation();
 
-          if (config.formElement.checkValidity()) {
+          const isHtmlValid = config.formElement.checkValidity();
+          const isCustomValid = this.validateCustomSelects(config);
+
+          if (!isHtmlValid) {
+            const invalidFields =
+              config.formElement.querySelectorAll(":invalid");
+            let hasVisibleInvalid = false;
+            invalidFields.forEach((field) => {
+              const isCustomSelect = field.hasAttribute("cf-form-select");
+              if (!isCustomSelect && field.offsetParent !== null) {
+                hasVisibleInvalid = true;
+              }
+            });
+
+            if (hasVisibleInvalid) {
+              config.formElement.reportValidity();
+            }
+          }
+
+          if (isHtmlValid && isCustomValid) {
             let isCaptchaValid = true;
             if (config.turnstileSiteKey) {
               const turnstileResponse = config.formElement.querySelector(
@@ -418,8 +462,6 @@ class RSBFormHandler {
             if (isCaptchaValid) {
               this.handleFormSubmit(config);
             }
-          } else {
-            config.formElement.reportValidity();
           }
           return false;
         },
@@ -436,6 +478,38 @@ class RSBFormHandler {
     if (webflowFail) webflowFail.style.display = "none";
   }
 
+  validateCustomSelects(config) {
+    let isValid = true;
+    // Find all selects with the cf-form-select attribute
+    const customSelects =
+      config.formElement.querySelectorAll("[cf-form-select]");
+
+    customSelects.forEach((select) => {
+      // Only check if it's required
+      if (select.hasAttribute("required") && !select.value) {
+        isValid = false;
+
+        // Find the closest wrapper
+        const wrapper = select.closest(".form-field-wrapper");
+        if (wrapper) {
+          const errorTexts = wrapper.querySelectorAll(".form-field_error-text");
+          errorTexts.forEach((el) => {
+            el.classList.remove("hide");
+          });
+        }
+      } else {
+        // If valid, ensure error is hidden
+        const wrapper = select.closest(".form-field-wrapper");
+        if (wrapper) {
+          const errorTexts = wrapper.querySelectorAll(".form-field_error-text");
+          errorTexts.forEach((el) => el.classList.add("hide"));
+        }
+      }
+    });
+
+    return isValid;
+  }
+
   setupAutoResetOnEdit(config) {
     config.hasErrorShown = false;
     const formInputs = config.formElement.querySelectorAll(
@@ -450,6 +524,21 @@ class RSBFormHandler {
         }
       });
       input.addEventListener("focus", () => {
+        if (config.hasErrorShown) {
+          this.hideError(config);
+        }
+      });
+      // Added change listener for selects to clear custom errors
+      input.addEventListener("change", () => {
+        if (input.tagName === "SELECT") {
+          const wrapper = input.closest(".form-field-wrapper");
+          if (wrapper) {
+            const errorTexts = wrapper.querySelectorAll(
+              ".form-field_error-text"
+            );
+            errorTexts.forEach((el) => el.classList.add("hide"));
+          }
+        }
         if (config.hasErrorShown) {
           this.hideError(config);
         }
